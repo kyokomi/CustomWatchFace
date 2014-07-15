@@ -1,0 +1,42 @@
+// keystoreの署名情報
+def keyStoreProperties = new Properties()
+file("../keystores/release.keystore.properties").withInputStream {
+    stream -> keyStoreProperties.load(stream)
+}
+
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 20
+    buildToolsVersion "20.0.0"
+
+    signingConfigs {
+        release {
+            storeFile file(keyStoreProperties.storeFile)
+            storePassword keyStoreProperties.storePassword
+            keyAlias keyStoreProperties.keyAlias
+            keyPassword keyStoreProperties.keyPassword
+        }
+    }
+
+    defaultConfig {
+        applicationId "com.kyokomi.customwatchface"
+        minSdkVersion 19
+        targetSdkVersion 20
+        versionCode 1
+        versionName "1.0"
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            runProguard false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    wearApp project(':wear')
+    compile 'com.google.android.gms:play-services-wearable:+'
+}

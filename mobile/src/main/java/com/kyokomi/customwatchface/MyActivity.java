@@ -7,6 +7,7 @@ import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
@@ -40,8 +41,10 @@ import com.google.android.gms.wearable.NodeApi;
 import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Wearable;
+import com.soundcloud.android.crop.Crop;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Collection;
@@ -64,7 +67,9 @@ public class MyActivity extends Activity implements DataApi.DataListener,
 
     private static final String TAG = "MainActivity";
 
-    /** Request code for launching the Intent to resolve Google Play services errors. */
+    /**
+     * Request code for launching the Intent to resolve Google Play services errors.
+     */
     private static final int REQUEST_RESOLVE_ERROR = 1000;
 
     private static final String START_ACTIVITY_PATH = "/start-activity";
@@ -96,7 +101,7 @@ public class MyActivity extends Activity implements DataApi.DataListener,
     public void onCreate(Bundle b) {
         super.onCreate(b);
         mHandler = new Handler();
-        LOGD(TAG, "onCreate");
+        Log.d(TAG, "onCreate");
 
         setContentView(R.layout.main_activity);
         setupViews();
@@ -117,15 +122,18 @@ public class MyActivity extends Activity implements DataApi.DataListener,
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == REQUEST_GALLERY && resultCode == RESULT_OK) {
-            try {
-                InputStream in = getContentResolver().openInputStream(data.getData());
-                mImageBitmap = BitmapFactory.decodeStream(in);
-                mThumbView.setImageBitmap(mImageBitmap);
-                in.close();
-            } catch (Exception e) {
-                Log.e(TAG, e.getMessage(), e);
-            }
+            Uri uri = data.getData();
+            beginCrop(uri);
+        } else if (requestCode == Crop.REQUEST_CROP && resultCode == RESULT_OK) {
+            Uri uri = Crop.getOutput(data);
+            mImageBitmap = BitmapFactory.decodeFile(uri.getPath());
+            mThumbView.setImageBitmap(mImageBitmap);
         }
+    }
+
+    private void beginCrop(Uri source) {
+        Uri outputUri = Uri.fromFile(new File(getCacheDir(), "cropped"));
+        new Crop(source).output(outputUri).asSquare().withMaxSize(320, 320).start(this);
     }
 
     @Override
@@ -162,7 +170,7 @@ public class MyActivity extends Activity implements DataApi.DataListener,
 
     @Override //ConnectionCallbacks
     public void onConnected(Bundle connectionHint) {
-        LOGD(TAG, "Google API Client was connected");
+        Log.d(TAG, "Google API Client was connected");
         mResolvingError = false;
         mStartActivityBtn.setEnabled(true);
         mSendPhotoBtn.setEnabled(true);
@@ -173,7 +181,7 @@ public class MyActivity extends Activity implements DataApi.DataListener,
 
     @Override //ConnectionCallbacks
     public void onConnectionSuspended(int cause) {
-        LOGD(TAG, "Connection to Google API client was suspended");
+        Log.d(TAG, "Connection to Google API client was suspended");
         mStartActivityBtn.setEnabled(false);
         mSendPhotoBtn.setEnabled(false);
     }
@@ -204,7 +212,7 @@ public class MyActivity extends Activity implements DataApi.DataListener,
 
     @Override //DataListener
     public void onDataChanged(DataEventBuffer dataEvents) {
-        LOGD(TAG, "onDataChanged: " + dataEvents);
+        Log.d(TAG, "onDataChanged: " + dataEvents);
         final List<DataEvent> events = FreezableUtils.freezeIterable(dataEvents);
         dataEvents.close();
         runOnUiThread(new Runnable() {
@@ -225,7 +233,7 @@ public class MyActivity extends Activity implements DataApi.DataListener,
 
     @Override //MessageListener
     public void onMessageReceived(final MessageEvent messageEvent) {
-        LOGD(TAG, "onMessageReceived() A message from watch was received:" + messageEvent
+        Log.d(TAG, "onMessageReceived() A message from watch was received:" + messageEvent
                 .getRequestId() + " " + messageEvent.getPath());
         mHandler.post(new Runnable() {
             @Override
@@ -238,7 +246,7 @@ public class MyActivity extends Activity implements DataApi.DataListener,
 
     @Override //NodeListener
     public void onPeerConnected(final Node peer) {
-        LOGD(TAG, "onPeerConnected: " + peer);
+        Log.d(TAG, "onPeerConnected: " + peer);
         mHandler.post(new Runnable() {
             @Override
             public void run() {
@@ -250,7 +258,7 @@ public class MyActivity extends Activity implements DataApi.DataListener,
 
     @Override //NodeListener
     public void onPeerDisconnected(final Node peer) {
-        LOGD(TAG, "onPeerDisconnected: " + peer);
+        Log.d(TAG, "onPeerDisconnected: " + peer);
         mHandler.post(new Runnable() {
             @Override
             public void run() {
@@ -348,16 +356,20 @@ public class MyActivity extends Activity implements DataApi.DataListener,
         }
     }
 
-    /** Sends an RPC to start a fullscreen Activity on the wearable. */
+    /**
+     * Sends an RPC to start a fullscreen Activity on the wearable.
+     */
     public void onStartWearableActivityClick(View view) {
-        LOGD(TAG, "Generating RPC");
+        Log.d(TAG, "Generating RPC");
 
         // Trigger an AsyncTask that will query for a list of connected nodes and send a
         // "start-activity" message to each connected node.
         new StartWearableActivityTask().execute();
     }
 
-    /** Generates a DataItem based on an incrementing count. */
+    /**
+     * Generates a DataItem based on an incrementing count.
+     */
     private class DataItemGenerator implements Runnable {
 
         private int count = 0;
@@ -368,7 +380,7 @@ public class MyActivity extends Activity implements DataApi.DataListener,
             putDataMapRequest.getDataMap().putInt(COUNT_KEY, count++);
             PutDataRequest request = putDataMapRequest.asPutDataRequest();
 
-            LOGD(TAG, "Generating DataItem: " + request);
+            Log.d(TAG, "Generating DataItem: " + request);
             if (!mGoogleApiClient.isConnected()) {
                 return;
             }
@@ -432,7 +444,7 @@ public class MyActivity extends Activity implements DataApi.DataListener,
                 .setResultCallback(new ResultCallback<DataItemResult>() {
                     @Override
                     public void onResult(DataItemResult dataItemResult) {
-                        LOGD(TAG, "Sending image was successful: " + dataItemResult.getStatus()
+                        Log.d(TAG, "Sending image was successful: " + dataItemResult.getStatus()
                                 .isSuccess());
                     }
                 });
@@ -462,14 +474,4 @@ public class MyActivity extends Activity implements DataApi.DataListener,
 
         mStartActivityBtn = findViewById(R.id.start_wearable_activity);
     }
-
-    /**
-     * As simple wrapper around Log.d
-     */
-    private static void LOGD(final String tag, String message) {
-        if (Log.isLoggable(tag, Log.DEBUG)) {
-            Log.d(tag, message);
-        }
-    }
-
 }

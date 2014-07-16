@@ -2,7 +2,9 @@ package com.kyokomi.customwatchface;
 
 import android.app.Activity;
 import android.content.IntentSender;
+import android.graphics.Bitmap;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.app.Fragment;
 import android.os.Handler;
@@ -15,6 +17,7 @@ import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.common.data.FreezableUtils;
+import com.google.android.gms.wearable.Asset;
 import com.google.android.gms.wearable.DataApi;
 import com.google.android.gms.wearable.DataEvent;
 import com.google.android.gms.wearable.DataEventBuffer;
@@ -26,6 +29,11 @@ import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Wearable;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.Collection;
+import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -48,17 +56,14 @@ public class DataApiFragment extends Fragment implements DataApi.DataListener,
 
     private static final String TAG = DataApiFragment.class.getSimpleName();
 
-    // TODO: Rename parameter arguments, choose names that match
-    // the fragment initialization parameters, e.g. ARG_ITEM_NUMBER
-    private static final String ARG_PARAM1 = "param1";
-    private static final String ARG_PARAM2 = "param2";
-
     /** Request code for launching the Intent to resolve Google Play services errors. */
     private static final int REQUEST_RESOLVE_ERROR = 1000;
 
-    // TODO: Rename and change types of parameters
-    private String mParam1;
-    private String mParam2;
+    private static final String START_ACTIVITY_PATH = "/start-activity";
+    private static final String COUNT_PATH = "/count";
+    private static final String IMAGE_PATH = "/image";
+    private static final String IMAGE_KEY = "photo";
+    private static final String COUNT_KEY = "count";
 
     private OnFragmentInteractionListener mListener;
 
@@ -69,36 +74,21 @@ public class DataApiFragment extends Fragment implements DataApi.DataListener,
     private ScheduledExecutorService mGeneratorExecutor;
     private ScheduledFuture<?> mDataItemGeneratorFuture;
 
-    private Handler mHandler;
-
     /**
      * Use this factory method to create a new instance of
      * this fragment using the provided parameters.
      *
-     * @param param1 Parameter 1.
-     * @param param2 Parameter 2.
      * @return A new instance of fragment DataApiFragment.
      */
     // TODO: Rename and change types and number of parameters
-    public static DataApiFragment newInstance(String param1, String param2) {
+    public static DataApiFragment newInstance() {
         DataApiFragment fragment = new DataApiFragment();
         Bundle args = new Bundle();
-        args.putString(ARG_PARAM1, param1);
-        args.putString(ARG_PARAM2, param2);
         fragment.setArguments(args);
         return fragment;
     }
     public DataApiFragment() {
         // Required empty public constructor
-    }
-
-    @Override
-    public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        if (getArguments() != null) {
-            mParam1 = getArguments().getString(ARG_PARAM1);
-            mParam2 = getArguments().getString(ARG_PARAM2);
-        }
     }
 
     @Override
@@ -136,8 +126,13 @@ public class DataApiFragment extends Fragment implements DataApi.DataListener,
      * >Communicating with Other Fragments</a> for more information.
      */
     public interface OnFragmentInteractionListener {
-        // TODO: Update argument type and name
-        public void onFragmentInteraction(Uri uri);
+        public void onConnected();
+        public void onConnectionSuspended();
+        public void onConnectionFailed();
+        public void onDataChanged(DataEventBuffer dataEvents);
+        public void onMessageReceived(final MessageEvent messageEvent);
+        public void onPeerConnected(final Node peer);
+        public void onPeerDisconnected(final Node peer);
     }
 
     @Override
@@ -174,10 +169,11 @@ public class DataApiFragment extends Fragment implements DataApi.DataListener,
 
     @Override //ConnectionCallbacks
     public void onConnected(Bundle connectionHint) {
-//        LOGD(TAG, "Google API Client was connected");
+        Log.d(TAG, "Google API Client was connected");
         mResolvingError = false;
-//        mStartActivityBtn.setEnabled(true);
-//        mSendPhotoBtn.setEnabled(true);
+
+        mListener.onConnected();
+
         Wearable.DataApi.addListener(mGoogleApiClient, this);
         Wearable.MessageApi.addListener(mGoogleApiClient, this);
         Wearable.NodeApi.addListener(mGoogleApiClient, this);
@@ -185,9 +181,8 @@ public class DataApiFragment extends Fragment implements DataApi.DataListener,
 
     @Override //ConnectionCallbacks
     public void onConnectionSuspended(int cause) {
-//        LOGD(TAG, "Connection to Google API client was suspended");
-//        mStartActivityBtn.setEnabled(false);
-//        mSendPhotoBtn.setEnabled(false);
+        Log.d(TAG, "Connection to Google API client was suspended");
+        mListener.onConnectionSuspended();
     }
 
     @Override //OnConnectionFailedListener
@@ -205,8 +200,8 @@ public class DataApiFragment extends Fragment implements DataApi.DataListener,
             }
         } else {
             mResolvingError = false;
-//            mStartActivityBtn.setEnabled(false);
-//            mSendPhotoBtn.setEnabled(false);
+
+            mListener.onConnectionFailed();
             Wearable.DataApi.removeListener(mGoogleApiClient, this);
             Wearable.MessageApi.removeListener(mGoogleApiClient, this);
             Wearable.NodeApi.removeListener(mGoogleApiClient, this);
@@ -215,63 +210,28 @@ public class DataApiFragment extends Fragment implements DataApi.DataListener,
 
     @Override //DataListener
     public void onDataChanged(DataEventBuffer dataEvents) {
-//        LOGD(TAG, "onDataChanged: " + dataEvents);
-        final List<DataEvent> events = FreezableUtils.freezeIterable(dataEvents);
-        dataEvents.close();
-        getActivity().runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                for (DataEvent event : events) {
-                    if (event.getType() == DataEvent.TYPE_CHANGED) {
-//                        mDataItemListAdapter.add(
-//                                new Event("DataItem Changed", event.getDataItem().toString()));
-                    } else if (event.getType() == DataEvent.TYPE_DELETED) {
-//                        mDataItemListAdapter.add(
-//                                new Event("DataItem Deleted", event.getDataItem().toString()));
-                    }
-                }
-            }
-        });
+        Log.d(TAG, "onDataChanged: " + dataEvents);
+        mListener.onDataChanged(dataEvents);
     }
 
     @Override //MessageListener
     public void onMessageReceived(final MessageEvent messageEvent) {
-//        LOGD(TAG, "onMessageReceived() A message from watch was received:" + messageEvent
-//                .getRequestId() + " " + messageEvent.getPath());
-        mHandler.post(new Runnable() {
-            @Override
-            public void run() {
-//                mDataItemListAdapter.add(new Event("Message from watch", messageEvent.toString()));
-            }
-        });
-
+        Log.d(TAG, "onMessageReceived() A message from watch was received:" + messageEvent
+                .getRequestId() + " " + messageEvent.getPath());
+        mListener.onMessageReceived(messageEvent);
     }
 
     @Override //NodeListener
     public void onPeerConnected(final Node peer) {
-//        LOGD(TAG, "onPeerConnected: " + peer);
-        mHandler.post(new Runnable() {
-            @Override
-            public void run() {
-//                mDataItemListAdapter.add(new Event("Connected", peer.toString()));
-            }
-        });
-
+        Log.d(TAG, "onPeerConnected: " + peer);
+        mListener.onPeerConnected(peer);
     }
 
     @Override //NodeListener
     public void onPeerDisconnected(final Node peer) {
-//        LOGD(TAG, "onPeerDisconnected: " + peer);
-        mHandler.post(new Runnable() {
-            @Override
-            public void run() {
-//                mDataItemListAdapter.add(new Event("Disconnected", peer.toString()));
-            }
-        });
+        Log.d(TAG, "onPeerDisconnected: " + peer);
+        mListener.onPeerDisconnected(peer);
     }
-
-    private static final String COUNT_PATH = "/count";
-    private static final String COUNT_KEY = "count";
 
     /** Generates a DataItem based on an incrementing count. */
     private class DataItemGenerator implements Runnable {
@@ -284,7 +244,7 @@ public class DataApiFragment extends Fragment implements DataApi.DataListener,
             putDataMapRequest.getDataMap().putInt(COUNT_KEY, count++);
             PutDataRequest request = putDataMapRequest.asPutDataRequest();
 
-//            LOGD(TAG, "Generating DataItem: " + request);
+            Log.d(TAG, "Generating DataItem: " + request);
             if (!mGoogleApiClient.isConnected()) {
                 return;
             }
@@ -293,11 +253,108 @@ public class DataApiFragment extends Fragment implements DataApi.DataListener,
                         @Override
                         public void onResult(DataApi.DataItemResult dataItemResult) {
                             if (!dataItemResult.getStatus().isSuccess()) {
-//                                Log.e(TAG, "ERROR: failed to putDataItem, status code: "
-//                                        + dataItemResult.getStatus().getStatusCode());
+                                Log.e(TAG, "ERROR: failed to putDataItem, status code: "
+                                        + dataItemResult.getStatus().getStatusCode());
                             }
                         }
                     });
+        }
+    }
+
+    /**
+     * Sends an RPC to start a fullscreen Activity on the wearable.
+     */
+    public void onStartWearableActivityClick() {
+        Log.d(TAG, "Generating RPC");
+
+        // Trigger an AsyncTask that will query for a list of connected nodes and send a
+        // "start-activity" message to each connected node.
+        new StartWearableActivityTask().execute();
+    }
+
+    private class StartWearableActivityTask extends AsyncTask<Void, Void, Void> {
+
+        @Override
+        protected Void doInBackground(Void... args) {
+            Collection<String> nodes = getNodes();
+            for (String node : nodes) {
+                sendStartActivityMessage(node);
+            }
+            return null;
+        }
+    }
+
+    private void sendStartActivityMessage(String node) {
+        Wearable.MessageApi.sendMessage(
+                mGoogleApiClient, node, START_ACTIVITY_PATH, new byte[0]).setResultCallback(
+                new ResultCallback<MessageApi.SendMessageResult>() {
+                    @Override
+                    public void onResult(MessageApi.SendMessageResult sendMessageResult) {
+                        if (!sendMessageResult.getStatus().isSuccess()) {
+                            Log.e(TAG, "Failed to send message with status code: "
+                                    + sendMessageResult.getStatus().getStatusCode());
+                        }
+                    }
+                }
+        );
+    }
+
+    private Collection<String> getNodes() {
+        HashSet<String> results = new HashSet<String>();
+        NodeApi.GetConnectedNodesResult nodes =
+                Wearable.NodeApi.getConnectedNodes(mGoogleApiClient).await();
+
+        for (Node node : nodes.getNodes()) {
+            results.add(node.getId());
+        }
+
+        return results;
+    }
+
+    /**
+     * Sends the asset that was created form the photo we took by adding it to the Data Item store.
+     */
+    private void sendPhoto(Asset asset) {
+        PutDataMapRequest dataMap = PutDataMapRequest.create(IMAGE_PATH);
+        dataMap.getDataMap().putAsset(IMAGE_KEY, asset);
+        dataMap.getDataMap().putLong("time", new Date().getTime());
+        PutDataRequest request = dataMap.asPutDataRequest();
+        Wearable.DataApi.putDataItem(mGoogleApiClient, request)
+                .setResultCallback(new ResultCallback<DataApi.DataItemResult>() {
+                    @Override
+                    public void onResult(DataApi.DataItemResult dataItemResult) {
+                        Log.d(TAG, "Sending image was successful: " + dataItemResult.getStatus()
+                                .isSuccess());
+                    }
+                });
+
+    }
+    public void onSendPhotoClick(Bitmap imageBitmap) {
+        if (null != imageBitmap && mGoogleApiClient.isConnected()) {
+            sendPhoto(toAsset(imageBitmap));
+        }
+    }
+
+    /**
+     * Builds an {@link com.google.android.gms.wearable.Asset} from a bitmap. The image that we get
+     * back from the camera in "data" is a thumbnail size. Typically, your image should not exceed
+     * 320x320 and if you want to have zoom and parallax effect in your app, limit the size of your
+     * image to 640x400. Resize your image before transferring to your wearable device.
+     */
+    private static Asset toAsset(Bitmap bitmap) {
+        ByteArrayOutputStream byteStream = null;
+        try {
+            byteStream = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteStream);
+            return Asset.createFromBytes(byteStream.toByteArray());
+        } finally {
+            if (null != byteStream) {
+                try {
+                    byteStream.close();
+                } catch (IOException e) {
+                    // ignore
+                }
+            }
         }
     }
 }

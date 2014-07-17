@@ -59,7 +59,6 @@ public class WatchFaceActivity extends Activity implements
         setContentView(R.layout.activity_watch_face);
 
         Log.d(TAG, "onCreate");
-        mHandler = new Handler();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         mGoogleApiClient = new GoogleApiClient.Builder(this)
@@ -88,11 +87,6 @@ public class WatchFaceActivity extends Activity implements
             }
         });
     }
-
-//    private ListView mDataItemList;
-//    private TextView mIntroText;
-//    private DataItemAdapter mDataItemListAdapter;
-//    private View mLayout;
 
     @Override
     protected void onResume() {
@@ -128,13 +122,11 @@ public class WatchFaceActivity extends Activity implements
     }
 
     private void generateEvent(final String title, final String text) {
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-//                mIntroText.setVisibility(View.INVISIBLE);
-//                mDataItemListAdapter.add(new Event(title, text));
-            }
-        });
+//        runOnUiThread(new Runnable() {
+//            @Override
+//            public void run() {
+//            }
+//        });
     }
 
     @Override
@@ -151,11 +143,10 @@ public class WatchFaceActivity extends Activity implements
                     Asset photo = dataMapItem.getDataMap()
                             .getAsset(DataLayerListenerService.IMAGE_KEY);
                     final Bitmap bitmap = loadBitmapFromAsset(mGoogleApiClient, photo);
-                    mHandler.post(new Runnable() {
+                    runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            Log.d(TAG, "Setting background image..");
-                            mImageView.setBackground(new BitmapDrawable(getResources(), bitmap));
+                            mImageView.setImageBitmap(bitmap);
                         }
                     });
 
@@ -163,13 +154,11 @@ public class WatchFaceActivity extends Activity implements
                     FileOutputStream fos = null;
                     try {
                         String filePath = "/sdcard/Pictures/background.png";
-                        Log.d(TAG, "#### save file = " + filePath);
                         fos = new FileOutputStream(new File(filePath));
                         bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos);
 
                         // 保存処理終了
                         fos.close();
-                        Log.d(TAG, "save image ");
 
                     } catch (Exception e) {
                         Log.e(TAG, e.getMessage(), e);
@@ -177,7 +166,6 @@ public class WatchFaceActivity extends Activity implements
                         // 画像解放
                         if (fos != null) try { fos.close(); } catch (Exception e) { Log.e(TAG, e.getMessage(), e); }
                     }
-
                 } else if (DataLayerListenerService.COUNT_PATH.equals(path)) {
                     Log.d(TAG, "Data Changed for COUNT_PATH");
                     generateEvent("DataItem Changed", event.getDataItem().toString());
@@ -226,16 +214,5 @@ public class WatchFaceActivity extends Activity implements
     @Override
     public void onPeerDisconnected(Node node) {
         generateEvent("Node Disconnected", node.getId());
-    }
-
-    private class Event {
-
-        String title;
-        String text;
-
-        public Event(String title, String text) {
-            this.title = title;
-            this.text = text;
-        }
     }
 }

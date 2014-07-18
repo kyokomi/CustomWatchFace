@@ -87,7 +87,7 @@ public class MyActivity extends Activity implements DataApiFragment.OnFragmentIn
         } else if (requestCode == Crop.REQUEST_CROP && resultCode == RESULT_OK) {
             Uri uri = Crop.getOutput(data);
             mImageBitmap = BitmapFactory.decodeFile(uri.getPath());
-            mThumbView.setImageBitmap(mImageBitmap);
+            mThumbView.setImageBitmap(Bitmap.createScaledBitmap(mImageBitmap, 320, 320, true));
         }
     }
 
